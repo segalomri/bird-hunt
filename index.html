@@ -107,6 +107,21 @@ table.board td:first-child{border-radius:0 14px 14px 0;width:54px;font-weight:80
 table.board td:last-child{border-radius:14px 0 0 14px;font-weight:800;color:#db2777}
 table.board tr.me td{background:linear-gradient(90deg,#fbcfe8,#c7d2fe)}
 .empty{color:#7c3aed;padding:14px}
+.panel.over{max-width:880px}
+.over-grid{display:grid;gap:clamp(6px,1.5vh,16px);align-items:center}
+@media (min-width:720px){.over-grid{grid-template-columns:1fr 1fr}}
+.bh{font-size:18px;font-weight:800;color:var(--purple-d)}
+table.board.compact td{padding-top:clamp(1px,.4vh,4px);padding-bottom:clamp(1px,.4vh,4px);font-size:15px}
+@media (max-width:719px){
+  .panel.over h2{font-size:20px;margin-bottom:0}
+  .panel.over .bigscore{font-size:38px}
+  .panel.over .chip.extra{display:none}
+  .panel.over .bank{font-size:15px;padding:3px 12px}
+  .panel.over .btn.big{font-size:18px;padding:7px 20px}
+  .panel.over .row{margin-top:6px}
+  table.board.compact{border-spacing:0 2px}
+  table.board.compact td{font-size:14px;padding-top:1px;padding-bottom:1px}
+}
 .chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:4px}
 .chip{background:#f5f3ff;border-radius:999px;padding:3px 12px;font-size:14px;font-weight:600;color:#6b21a8}
 .bigscore{line-height:1.1;font-size:clamp(40px,8vh,64px);font-weight:800;background:linear-gradient(90deg,#ec4899,#8b5cf6,#3b82f6);-webkit-background-clip:text;background-clip:text;color:transparent}
@@ -126,6 +141,7 @@ input.name:focus{border-color:#ec4899}
   <div class="pill" id="hStrikes"><small>פסילות</small></div>
   <div class="spacer"></div>
   <button class="btn blue" id="bShop">🛒 שיפורים</button>
+  <button class="btn ghost" id="bHudBoard" title="טבלת שיאים">🏆</button>
   <button class="btn ghost" id="bPause" title="הפסקה (P)">⏸️</button>
   <button class="btn ghost music-btn" title="מוזיקה">🎵</button>
   <button class="btn ghost sfx-btn" title="צלילי משחק">🔊</button>
@@ -217,20 +233,27 @@ input.name:focus{border-color:#ec4899}
 
 <!-- Game over -->
 <div class="overlay" id="ovOver">
-  <div class="panel small">
-    <h2 id="oReason">המשחק נגמר</h2>
-    <div class="bigscore" id="oScore">0</div>
-    <div class="chips" id="oStats"></div>
-    <div class="bank" style="margin-top:6px">⭐ נוספו לקופת הכוכבים: <span id="oBank">0</span></div>
-    <div class="row" id="saveRow">
-      <input class="name" id="oName" maxlength="14" placeholder="השם שלך">
-      <button class="btn" id="bSave">💾 שמירה בטבלה</button>
+  <div class="panel over">
+    <div class="over-grid">
+      <div>
+        <h2 id="oReason">המשחק נגמר</h2>
+        <div class="bigscore" id="oScore">0</div>
+        <div class="chips" id="oStats"></div>
+        <div class="bank" style="margin-top:6px">⭐ נוספו לקופת הכוכבים: <span id="oBank">0</span></div>
+        <div class="row" id="saveRow">
+          <input class="name" id="oName" maxlength="14" placeholder="השם שלך">
+          <button class="btn" id="bSave">💾 שמירה בטבלה</button>
+        </div>
+        <div class="row">
+          <button class="btn big" id="bAgain">🔁 עוד פעם</button>
+          <button class="btn ghost" id="bMenu">🏠 תפריט</button>
+        </div>
+      </div>
+      <div>
+        <div class="bh">🏆 טבלת שיאים</div>
+        <div id="oBoard"></div>
+      </div>
     </div>
-    <div class="row">
-      <button class="btn big" id="bAgain">🔁 עוד פעם</button>
-      <button class="btn ghost" id="bMenu">🏠 תפריט</button>
-    </div>
-    <div id="oBoard"></div>
   </div>
 </div>
 
@@ -273,6 +296,14 @@ const UPS = [
   { id: 'multi',   icon: '🔱', name: 'שיגור כפול',    desc: 'יורים כמה פצצות בבת אחת',       costs: [400, 900] },
   { id: 'heal',    icon: '💖', name: 'מחיקת פסילה',  desc: 'מוחק פסילה אחת',                 heal: true },
 ];
+// Permanent versions, bought in the magic store with stars: every game starts at these levels.
+const PERM_COSTS = {
+  radius:  [1500, 3000, 5000, 8000, 12000],
+  cluster: [3000, 7000, 12000],
+  rate:    [1500, 3000, 5000, 8000, 12000],
+  speed:   [1000, 2500, 5000],
+  multi:   [7000, 15000],
+};
 
 const BGS = [
   { id: 'dawn',    name: 'שחר ורוד',     price: 0,     colors: ['#c4b5fd', '#f9a8d4', '#fce7f3'], ground: '#a78bfa', deco: ['sun', 'clouds'] },
@@ -319,6 +350,7 @@ const RAINBOW = ['#f472b6', '#c084fc', '#60a5fa', '#22d3ee'];
 const KEY = 'birdHunt.save.v1';
 function defaultSave() {
   return { bank: 0, total: 0, board: [], name: '', sfx: true, music: true,
+    perm: { radius: 0, cluster: 0, rate: 0, speed: 0, multi: 0 },   // upgrades bought with stars, kept for every game
     owned: { bg: ['dawn'], cannon: ['classic'], bird: ['classic'], egg: ['classic'] },
     eq:    { bg: 'dawn',   cannon: 'classic',   bird: 'classic',   egg: 'classic' } };
 }
@@ -333,6 +365,7 @@ function loadSave() {
     else if (s.owned) for (const k in d.owned) if (Array.isArray(s.owned[k])) d.owned[k] = s.owned[k];
     if (s.bg) d.eq.bg = s.bg;                                  // older save format
     if (s.eq) Object.assign(d.eq, s.eq);
+    if (s.perm) for (const k in d.perm) if (Number.isInteger(s.perm[k])) d.perm[k] = s.perm[k];
   } catch (e) {}
   return d;
 }
@@ -828,7 +861,7 @@ const bombSpeed   = () => 480 + 170 * G.up.speed;
 const healCost    = () => 250 + 150 * G.heals;
 
 function newGame() {
-  G = { score: 0, coins: 0, strikes: 0, time: GAME_TIME, elapsed: 0, up: { radius: 0, cluster: 0, rate: 0, speed: 0, multi: 0 },
+  G = { score: 0, coins: 0, strikes: 0, time: GAME_TIME, elapsed: 0, up: { ...save.perm },
         heals: 0, cool: 0, birdT: 0.3, eggT: 8, kills: 0, shots: 0, best: null, bestCombo: 0, shake: 0, flash: 0, endReason: null, saved: false };
   birds = []; eggs = []; bombs = []; explosions = []; parts = []; texts = [];
 }
@@ -1061,7 +1094,7 @@ const overlays = ['ovMenu', 'ovShop', 'ovStore', 'ovBoard', 'ovPause', 'ovConfir
 function show(id) { overlays.forEach(o => $(o).classList.toggle('show', o === id)); }
 function setMode(m) {
   mode = m;
-  $('hud').classList.toggle('show', ['play', 'paused', 'shop', 'confirm'].includes(m));
+  $('hud').classList.toggle('show', ['play', 'paused', 'shop', 'confirm', 'gboard'].includes(m));
   canvas.style.cursor = m === 'play' ? 'none' : 'default';
   holding = false;
 }
@@ -1078,17 +1111,18 @@ function endGame() {
   $('oReason').textContent = G.endReason;
   $('oScore').textContent = G.score.toLocaleString();
   const combo = G.bestCombo >= 2 ? `${G.bestCombo} ציפורים בפיצוץ אחד` : 'עוד לא היה';
+  // "extra" chips are hidden on narrow phones so the end screen fits without scrolling
   $('oStats').innerHTML = [
-    `🐦 ציפורים שנפגעו: ${G.kills}`,
-    `💥 הקומבו הכי גדול: ${combo}`,
-    G.best ? `👑 הציפור הכי שווה: ${G.best.name} (${G.best.pts})` : '',
-    `⏱️ זמן משחק: ${Math.floor(G.elapsed / 60)}:${String(Math.floor(G.elapsed % 60)).padStart(2, '0')}`,
-  ].filter(Boolean).map(s => `<span class="chip">${s}</span>`).join('');
+    [`🐦 ציפורים שנפגעו: ${G.kills}`, ''],
+    [`💥 הקומבו הכי גדול: ${combo}`, ''],
+    [G.best ? `👑 הציפור הכי שווה: ${G.best.name} (${G.best.pts})` : '', 'extra'],
+    [`⏱️ זמן משחק: ${Math.floor(G.elapsed / 60)}:${String(Math.floor(G.elapsed % 60)).padStart(2, '0')}`, 'extra'],
+  ].filter(([s]) => s).map(([s, cls]) => `<span class="chip ${cls}">${s}</span>`).join('');
   $('oBank').textContent = G.score.toLocaleString();
   $('oName').value = save.name || '';
   $('saveRow').style.display = G.score > 0 ? 'flex' : 'none';
   lastSavedId = null;
-  renderBoard($('oBoard'), null, 3);
+  renderBoard($('oBoard'), null, 10, true);
   show('ovOver');
 }
 function saveScore() {
@@ -1103,7 +1137,7 @@ function saveScore() {
   G.saved = true;
   lastSavedId = entry.id;
   $('saveRow').style.display = 'none';
-  renderBoard($('oBoard'), entry.id, 3);
+  renderBoard($('oBoard'), entry.id, 10, true);
   Shared.add(entry);
   beep('buy');
 }
@@ -1181,9 +1215,9 @@ function loadScript(src) {
 const boardRows = () => Shared.rows || save.board;
 function refreshBoards() {
   if ($('ovBoard').classList.contains('show')) renderBoard($('boardBox'), null);
-  if ($('ovOver').classList.contains('show')) renderBoard($('oBoard'), lastSavedId, 3);
+  if ($('ovOver').classList.contains('show')) renderBoard($('oBoard'), lastSavedId, 10, true);
 }
-function renderBoard(box, hl, limit = 10) {
+function renderBoard(box, hl, limit = 10, compact = false) {
   const all = boardRows();
   const label = Shared.rows ? '<div class="note">🌍 טבלה משותפת לכל השחקנים</div>' : '';
   if (!all.length) { box.innerHTML = label + '<div class="empty">עדיין אין שיאים, זה הזמן לקבוע את הראשון ✨</div>'; return; }
@@ -1192,8 +1226,9 @@ function renderBoard(box, hl, limit = 10) {
   let rows = all.slice(0, limit);
   const mine = all.findIndex(e => e.id === hl);
   if (mine >= limit) rows = rows.slice(0, limit - 1).concat(all[mine]);   // keep the new score visible
-  box.innerHTML = label + '<table class="board">' + rows.map(e => [e, all.indexOf(e)]).map(([e, i]) =>
-    `<tr class="${hl && e.id === hl ? 'me' : ''}"><td>${medals[i] || i + 1}</td><td>${esc(e.name)}<br><small style="color:#7c3aed">${esc(e.date)}</small></td><td>${Number(e.score).toLocaleString()}</td></tr>`
+  const when = e => compact ? '' : `<br><small style="color:#7c3aed">${esc(e.date)}</small>`;
+  box.innerHTML = label + `<table class="board${compact ? ' compact' : ''}">` + rows.map(e => [e, all.indexOf(e)]).map(([e, i]) =>
+    `<tr class="${hl && e.id === hl ? 'me' : ''}"><td>${medals[i] || i + 1}</td><td>${esc(e.name)}${when(e)}</td><td>${Number(e.score).toLocaleString()}</td></tr>`
   ).join('') + '</table>';
 }
 
@@ -1246,7 +1281,29 @@ const STORE = {
     drawBackground(c, w, h, curBg(), 3); drawGround(c, w, h, curBg());
     drawEggplant(c, w / 2, h * 0.45, 36, 0.2, 1, it);
   } },
+  perm: { label: '⚡ שדרוגים קבועים', upgrades: true },
 };
+function renderPermUpgrades(grid) {
+  const note = document.createElement('div'); note.className = 'note'; note.style.gridColumn = '1 / -1';
+  note.textContent = 'שדרוג קבוע נשאר לכל המשחקים. כל משחק מתחיל כבר עם הרמה שקניתם.';
+  grid.appendChild(note);
+  for (const u of UPS) {
+    const costs = PERM_COSTS[u.id];
+    if (!costs) continue;
+    const lvl = save.perm[u.id];
+    const card = document.createElement('div'); card.className = 'card';
+    card.innerHTML = `<div class="ic">${u.icon}</div><div class="nm">${u.name}</div><div class="ds">${u.desc}</div>` +
+      '<div class="dots">' + costs.map((_, i) => `<span class="dot ${i < lvl ? 'on' : ''}"></span>`).join('') + '</div>';
+    const b = document.createElement('button'); b.className = 'btn';
+    if (lvl >= costs.length) { b.textContent = 'מקסימום ✨'; b.disabled = true; }
+    else {
+      const price = costs[lvl];
+      b.textContent = `⭐ ${price.toLocaleString()}`; b.disabled = save.bank < price;
+      b.onclick = () => { save.bank -= price; save.perm[u.id]++; persist(); beep('buy'); renderStore(); };
+    }
+    card.appendChild(b); grid.appendChild(card);
+  }
+}
 let storeCat = 'bg';
 function openStore() { setMode('store'); show('ovStore'); renderStore(); }
 function renderStore() {
@@ -1259,6 +1316,7 @@ function renderStore() {
     tabs.appendChild(t);
   }
   const S = STORE[storeCat], grid = $('stGrid'); grid.innerHTML = '';
+  if (S.upgrades) { renderPermUpgrades(grid); return; }
   for (const it of S.items) {
     const owned = save.owned[storeCat].includes(it.id), cur = save.eq[storeCat] === it.id;
     const card = document.createElement('div'); card.className = 'card' + (cur ? ' sel' : '');
@@ -1313,7 +1371,7 @@ addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') { if (e.key === 'Enter') saveScore(); return; }
   if (e.key === 'p' || e.key === 'P' || e.key === 'פ') togglePause();
   else if (e.key === ' ' && mode === 'play') { holding = true; e.preventDefault(); }
-  else if (e.key === 'Escape') { if (mode === 'shop') closeShop(); else if (mode === 'confirm' || mode === 'paused') { setMode('play'); show(null); } }
+  else if (e.key === 'Escape') { if (mode === 'shop') closeShop(); else if (['confirm', 'paused', 'gboard'].includes(mode)) { setMode('play'); show(null); } }
 });
 addEventListener('keyup', e => { if (e.key === ' ') holding = false; });
 document.addEventListener('visibilitychange', () => { if (document.hidden && mode === 'play') togglePause(); });
@@ -1321,8 +1379,18 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && mod
 $('bStart').onclick = startGame;
 $('bAgain').onclick = startGame;
 $('bMenu').onclick = toMenu;
-$('bBoard').onclick = () => { setMode('board'); renderBoard($('boardBox'), null); show('ovBoard'); };
-$('bBoardBack').onclick = toMenu;
+// The leaderboard opens from the menu, or from inside a game (which pauses it).
+function openBoard() {
+  const inGame = mode === 'play';
+  if (inGame) holding = false;
+  setMode(inGame ? 'gboard' : 'board');
+  $('bBoardBack').textContent = inGame ? '▶️ חזרה למשחק' : '🏠 חזרה';
+  renderBoard($('boardBox'), null);
+  show('ovBoard');
+}
+$('bBoard').onclick = openBoard;
+$('bHudBoard').onclick = () => { if (mode === 'play') openBoard(); };
+$('bBoardBack').onclick = () => { if (mode === 'gboard') { setMode('play'); show(null); } else toMenu(); };
 $('bStore').onclick = openStore;
 $('bStoreBack').onclick = toMenu;
 $('bShop').onclick = openShop;
@@ -1342,7 +1410,7 @@ function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   clock += dt;
   if (mode === 'play') updatePlay(dt);
-  else if (!['paused', 'shop', 'confirm'].includes(mode)) updateDemo(dt);
+  else if (!['paused', 'shop', 'confirm', 'gboard'].includes(mode)) updateDemo(dt);
   draw();
   updateHUD();
   requestAnimationFrame(loop);
